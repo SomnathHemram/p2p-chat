@@ -27,6 +27,7 @@ const roomCodeInput = document.getElementById('room-code');
 const joinRoomButton = document.getElementById('join-room');
 const createRoomButton = document.getElementById('create-room');
 const displayRoomCode = document.getElementById('display-room-code');
+const displayRoomCodeInline = document.getElementById('display-room-code-inline');
 const roomInfo = document.getElementById('room-info');
 const leaveRoomBtn = document.getElementById('leave-room');
 const statusDiv = document.getElementById('status');
@@ -41,17 +42,88 @@ const startMediaBtn = document.getElementById('start-media');
 const stopMediaBtn = document.getElementById('stop-media');
 const localVideo = document.getElementById('localVideo');
 const remoteVideo = document.getElementById('remoteVideo');
+const cameraSelect = document.getElementById('cameraSelect');
+const micSelect = document.getElementById('micSelect');
+const localVideoWrap = document.getElementById('localVideoWrap');
+const remoteVideoWrap = document.getElementById('remoteVideoWrap');
+
+
+// ======= Ask permission & load devices =======
+async function populateDeviceLists() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    cameraSelect.innerHTML = '';
+    micSelect.innerHTML = '';
+    devices.forEach(d => {
+      const option = document.createElement('option');
+      option.value = d.deviceId;
+      option.text = d.label || `${d.kind}`;
+      if (d.kind === 'videoinput') cameraSelect.appendChild(option);
+      if (d.kind === 'audioinput') micSelect.appendChild(option);
+    });
+  } catch (err) {
+    console.warn('Error listing devices', err);
+  }
+}
+
+// Request permission first so labels appear
+async function initDevices() {
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    await populateDeviceLists();
+  } catch (err) {
+    console.error('Device access denied', err);
+  }
+}
+initDevices();
+
+// Update list if devices change (plug in/out)
+navigator.mediaDevices.addEventListener('devicechange', populateDeviceLists);
+ 
 
 // ======= UI helpers =======
-function setStatus(t){ statusDiv.textContent = t; }
-function showChat(){ chatArea.classList.remove('hidden'); }
-function hideChat(){ chatArea.classList.add('hidden'); }
-function clearChat(){ chatBox.innerHTML = ''; messageInput.value = ''; fileProgress.textContent = ''; setStatus(''); }
-function showRoomCode(code){ displayRoomCode.textContent = code; roomInfo.classList.remove('hidden'); }
-function hideRoomCode(){ roomInfo.classList.add('hidden'); displayRoomCode.textContent = ''; }
+function setStatus(t) { statusDiv.textContent = t; }
+function showChat() { chatArea.classList.remove('hidden'); }
+function hideChat() { chatArea.classList.add('hidden'); }
+function clearChat() {
+  chatBox.innerHTML = '';
+  messageInput.value = '';
+  fileProgress.textContent = '';
+  setStatus('');
+}
+function showRoomCode(code) {
+  displayRoomCode.textContent = code;
+  if (displayRoomCodeInline) displayRoomCodeInline.textContent = code;
+  roomInfo.classList.remove('hidden');
+}
+function hideRoomCode() {
+  roomInfo.classList.add('hidden');
+  displayRoomCode.textContent = '';
+  if (displayRoomCodeInline) displayRoomCodeInline.textContent = '';
+}
+
+// ======= Device list population =======
+async function populateDeviceLists() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    cameraSelect.innerHTML = '';
+    micSelect.innerHTML = '';
+    devices.forEach(d => {
+      const option = document.createElement('option');
+      option.value = d.deviceId;
+      option.text = d.label || `${d.kind}`;
+      if (d.kind === 'videoinput') cameraSelect.appendChild(option);
+      if (d.kind === 'audioinput') micSelect.appendChild(option);
+    });
+  } catch (err) {
+    console.warn('Error listing devices', err);
+  }
+}
+populateDeviceLists();
+navigator.mediaDevices.addEventListener('devicechange', populateDeviceLists);
 
 // ======= Message display =======
-function displayMessage(text, who='peer'){
+function displayMessage(text, who = 'peer') {
   const el = document.createElement('div');
   el.className = 'message ' + (who === 'me' ? 'me' : 'peer');
   el.textContent = text;
@@ -60,9 +132,9 @@ function displayMessage(text, who='peer'){
 }
 
 // ======= Helpers for Firebase room paths =======
-function roomRef(path=''){ return database.ref(`rooms/${roomCode}/${path}`); }
-function setRoomTimestamp(){ roomRef('ts').set(Date.now()); }
-async function roomExists(code){
+function roomRef(path = '') { return database.ref(`rooms/${roomCode}/${path}`); }
+function setRoomTimestamp() { roomRef('ts').set(Date.now()); }
+async function roomExists(code) {
   const snap = await database.ref(`rooms/${code}/offer`).once('value');
   return snap.exists();
 }
@@ -82,17 +154,20 @@ joinRoomButton.onclick = async () => {
   clearChat();
   isHost = false;
   const code = roomCodeInput.value.trim();
-  if(!/^\d{6}$/.test(code)){ alert('Enter a 6-digit room code'); return; }
+  if (!/^\d{6}$/.test(code)) { alert('Enter a 6-digit room code'); return; }
   roomCode = code;
   setStatus(`Joining room ${roomCode}...`);
-  // optionally check TTL
   const tsSnap = await database.ref(`rooms/${roomCode}/ts`).once('value');
-  if(tsSnap.exists()){
+  if (tsSnap.exists()) {
     const ts = tsSnap.val();
-    if(Date.now() - ts > 30*60*1000){ // older than 30 mins
+    if (Date.now() - ts > 30 * 60 * 1000) {
       alert('Room expired (older than 30 minutes).');
       return;
     }
+  }
+  if (!(await roomExists(roomCode))) {
+    alert('No such room / host not ready.');
+    return;
   }
   showRoomCode(roomCode);
   await startConnection();
@@ -109,16 +184,20 @@ leaveRoomBtn.onclick = async () => {
 // ======= Start/Stop media buttons =======
 startMediaBtn.onclick = async () => {
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    const constraints = {
+      audio: micSelect.value ? { deviceId: { exact: micSelect.value } } : true,
+      video: cameraSelect.value ? { deviceId: { exact: cameraSelect.value } } : true
+    };
+    localStream = await navigator.mediaDevices.getUserMedia(constraints);
     localVideo.srcObject = localStream;
-    // add tracks to pc (if exists) and renegotiate
-    if(pc){
-      for(const t of localStream.getTracks()) pc.addTrack(t, localStream);
+    localVideoWrap.classList.remove('hidden');
+
+    if (pc) {
+      for (const t of localStream.getTracks()) pc.addTrack(t, localStream);
       await renegotiate();
     }
     startMediaBtn.disabled = true;
     stopMediaBtn.disabled = false;
-    setStatus(prev => prev); // keep current status
   } catch (e) {
     console.error('getUserMedia error', e);
     alert('Could not get media: ' + e.message);
@@ -126,63 +205,48 @@ startMediaBtn.onclick = async () => {
 };
 
 stopMediaBtn.onclick = async () => {
-  if(localStream){
+  if (localStream) {
     localStream.getTracks().forEach(t => t.stop());
     localStream = null;
     localVideo.srcObject = null;
-    // can't reliably remove tracks easily; easiest is to recreate connection if needed.
-    setStatus('Media stopped (you may need to reconnect to remove tracks).');
+    setStatus('Media stopped.');
   }
   startMediaBtn.disabled = false;
   stopMediaBtn.disabled = true;
 };
 
-// ======= File sending logic (chunked) =======
+// ======= File sending logic with backpressure =======
 let sendingFile = null;
 sendFileBtn.onclick = async () => {
   const file = fileInput.files[0];
-  if(!file || !dataChannel || dataChannel.readyState !== 'open'){ alert('Select file and ensure connected'); return; }
+  if (!file || !dataChannel || dataChannel.readyState !== 'open') { alert('Select file and ensure connected'); return; }
   sendingFile = { name: file.name, size: file.size, type: file.type };
-  // send metadata as JSON
-  dataChannel.send(JSON.stringify({ t:'file-meta', name: file.name, size: file.size, type: file.type }));
-  const reader = new FileReader();
+  dataChannel.send(JSON.stringify({ t: 'file-meta', ...sendingFile }));
   let offset = 0;
   fileProgress.textContent = '0%';
-  reader.onload = (e) => {
-    const buffer = e.target.result;
-    // send as ArrayBuffer
-    dataChannel.send(buffer);
-    offset += buffer.byteLength;
-    fileProgress.textContent = Math.floor(offset / file.size * 100) + '%';
-    if(offset < file.size){
-      readSlice(offset);
-    } else {
-      dataChannel.send(JSON.stringify({ t:'file-end' }));
-      fileProgress.textContent = 'Sent 100%';
-      sendingFile = null;
+  while (offset < file.size) {
+    while (dataChannel.bufferedAmount > 65536) {
+      await new Promise(r => setTimeout(r, 100));
     }
-  };
-  reader.onerror = (err) => {
-    console.error('File read error', err);
-  };
-  function readSlice(o){
-    const slice = file.slice(o, o + chunkSize);
-    reader.readAsArrayBuffer(slice);
+    const slice = await file.slice(offset, offset + chunkSize).arrayBuffer();
+    dataChannel.send(slice);
+    offset += slice.byteLength;
+    fileProgress.textContent = Math.floor(offset / file.size * 100) + '%';
   }
-  readSlice(0);
+  dataChannel.send(JSON.stringify({ t: 'file-end' }));
+  fileProgress.textContent = 'Sent 100%';
+  sendingFile = null;
 };
 
-// receiver state for incoming file
 let incomingFile = null;
 let incomingBuffers = [];
 
 // ======= Core WebRTC & signaling =======
-async function startConnection(){
+async function startConnection() {
   showChat();
   pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
-  // data channel setup depending on host/joiner
-  if(isHost){
+  if (isHost) {
     dataChannel = pc.createDataChannel('chat');
     setupDataChannel();
   } else {
@@ -192,58 +256,40 @@ async function startConnection(){
     };
   }
 
-  // media handler: remote tracks -> remoteVideo
-  pc.ontrack = (ev) => {
-    // attach stream
-    remoteVideo.srcObject = ev.streams[0];
-  };
+  pc.ontrack = (ev) => { remoteVideo.srcObject = ev.streams[0]; };
+remoteVideoWrap.classList.remove('hidden');
 
-  // ICE candidate -> push to DB
   pc.onicecandidate = (e) => {
-    if(e.candidate){
+    if (e.candidate) {
       const path = isHost ? 'callerCandidates' : 'calleeCandidates';
       roomRef(path).push(e.candidate.toJSON());
     }
   };
 
-  // listen for other side ICE
   const otherCandidatesPath = isHost ? 'calleeCandidates' : 'callerCandidates';
   roomRef(otherCandidatesPath).on('child_added', snapshot => {
     const cand = snapshot.val();
-    if(cand){
-      pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.warn('addIce error', e));
-    }
+    if (cand) pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => console.warn('addIce error', e));
   });
 
-  if(isHost){
-    // create offer, write to rooms/{roomCode}/offer
+  if (isHost) {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     await roomRef('offer').set(offer);
-    setRoomTimestamp(); // refresh timestamp
+    setRoomTimestamp();
     setStatus('Offer created. Waiting for answer...');
-
-    // listen for answer
     roomRef('answer').on('value', async snap => {
       const answer = snap.val();
-      if(answer && !pc.currentRemoteDescription){
+      if (answer && !pc.currentRemoteDescription) {
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        setStatus('Connected (answer applied)');
+        setStatus('Connected');
       }
     });
-
   } else {
-    // joiner: read offer, set remote, create answer and write it
     const offerSnap = await roomRef('offer').once('value');
-    if(!offerSnap.exists()){
-      setStatus('❌ No such room / host not ready.');
-      return;
-    }
-    const offer = offerSnap.val();
-    // apply offer
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    if (!offerSnap.exists()) { setStatus('❌ No such room / host not ready.'); return; }
+    await pc.setRemoteDescription(new RTCSessionDescription(offerSnap.val()));
     setStatus('Offer received. Creating answer...');
-    // create answer
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     await roomRef('answer').set(answer);
@@ -251,102 +297,71 @@ async function startConnection(){
     setStatus('Answer sent. Completing connection...');
   }
 
-  // when connection reaches datachannel open, set connected status is handled inside setupDataChannel()
-  // send message handler
   sendMessageButton.onclick = () => {
     const txt = messageInput.value.trim();
-    if(!txt || !dataChannel || dataChannel.readyState !== 'open') return;
-    dataChannel.send(JSON.stringify({ t:'msg', text: txt }));
+    if (!txt || !dataChannel || dataChannel.readyState !== 'open') return;
+    dataChannel.send(JSON.stringify({ t: 'msg', text: txt }));
     displayMessage(txt, 'me');
     messageInput.value = '';
   };
 
-  // cleanup on unload (host deletes room)
   window.addEventListener('beforeunload', async () => {
     await cleanupAndClose(true);
   });
 }
 
-// data channel message handling
-function setupDataChannel(){
-  dataChannel.onopen = () => {
-    setStatus('✅ Connected');
-  };
-
+function setupDataChannel() {
+  dataChannel.onopen = () => setStatus('✅ Connected');
   dataChannel.onmessage = async (ev) => {
-    // ev.data might be string (JSON) or ArrayBuffer (file chunk)
-    if(typeof ev.data === 'string'){
+    if (typeof ev.data === 'string') {
       try {
         const obj = JSON.parse(ev.data);
-        if(obj.t === 'msg'){
+        if (obj.t === 'msg') {
           displayMessage(obj.text, 'peer');
-        } else if(obj.t === 'file-meta'){
-          // prepare for incoming file
+        } else if (obj.t === 'file-meta') {
           incomingFile = { name: obj.name, size: obj.size, type: obj.type };
           incomingBuffers = [];
           fileProgress.textContent = `Receiving ${incomingFile.name} (0%)`;
-        } else if(obj.t === 'file-end'){
-          // assemble file and offer download
+        } else if (obj.t === 'file-end') {
           const blob = new Blob(incomingBuffers, { type: incomingFile.type || 'application/octet-stream' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
           a.download = incomingFile.name;
-          a.textContent = `Download ${incomingFile.name} (${Math.round(incomingFile.size/1024)} KB)`;
-          const wrap = document.createElement('div');
-          wrap.appendChild(a);
-          chatBox.appendChild(wrap);
+          a.textContent = `Download ${incomingFile.name} (${Math.round(incomingFile.size / 1024)} KB)`;
+          chatBox.appendChild(a);
           chatBox.scrollTop = chatBox.scrollHeight;
           fileProgress.textContent = 'Received 100%';
           incomingFile = null;
           incomingBuffers = [];
-        } else if(obj.t === 'renegotiate'){
-          // remote asks for renegotiation: create answer if we're joiner
-          // (we ignore these here because we use DB offer/answer mechanism)
         }
-      } catch(e){
-        // not JSON - ignore
-        console.warn('JSON parse fail', e);
-      }
-    } else if(ev.data instanceof ArrayBuffer){
-      // file chunk
+      } catch (e) { }
+    } else if (ev.data instanceof ArrayBuffer) {
       incomingBuffers.push(ev.data);
-      if(incomingFile){
-        const receivedBytes = incomingBuffers.reduce((s,b)=> s + b.byteLength, 0);
+      if (incomingFile) {
+        const receivedBytes = incomingBuffers.reduce((s, b) => s + b.byteLength, 0);
         const pct = Math.floor(receivedBytes / incomingFile.size * 100);
         fileProgress.textContent = `Receiving ${incomingFile.name} (${pct}%)`;
       }
-    } else if(ev.data instanceof Blob){
-      const ab = await ev.data.arrayBuffer();
-      incomingBuffers.push(ab);
     }
   };
 }
 
-// renegotiate: creates a new offer, writes to DB (overwrites offer), joiner will create answer
-async function renegotiate(){
-  if(!pc || !roomCode) return;
-  setStatus('Renegotiating (updating tracks)...');
+async function renegotiate() {
+  if (!pc || !roomCode) return;
+  setStatus('Renegotiating...');
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   await roomRef('offer').set(offer);
-  // joiner will pick up offer and produce answer; host listens for answer (as earlier)
 }
 
-// cleanup function to remove room from DB if host and close pc
-async function cleanupAndClose(removeRoom=false){
+async function cleanupAndClose(removeRoom = false) {
   try {
-    if(pc) pc.close();
+    if (pc) pc.close();
     pc = null;
     dataChannel = null;
-    if(removeRoom && isHost && roomCode){
+    if (removeRoom && isHost && roomCode) {
       await database.ref(`rooms/${roomCode}`).remove();
     }
-  } catch (e){ console.warn('cleanup error', e); }
+  } catch (e) { console.warn('cleanup error', e); }
 }
-
-// ======= Simple TTL housekeeping idea =======
-// When creating a room we set ts. Clients check ts on join and reject if older than 30 minutes.
-// Fully automated server-side TTL requires functions; this is a client-side check.
-
-// ==================== End of app.js ====================

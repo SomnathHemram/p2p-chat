@@ -136,3 +136,8 @@ body{
   .videos{flex-direction:column}
   .video-wrap video{height:200px}
 }
+
+/* Hiding helper for JS toggles */
+.hidden {
+  display: none !important;
+}
