@@ -48,6 +48,7 @@ const localVideoWrap = document.getElementById('localVideoWrap');
 const remoteVideoWrap = document.getElementById('remoteVideoWrap');
 
 
+
 // ======= Ask permission & load devices =======
 async function populateDeviceLists() {
   try {
@@ -190,12 +191,13 @@ startMediaBtn.onclick = async () => {
     };
     localStream = await navigator.mediaDevices.getUserMedia(constraints);
     localVideo.srcObject = localStream;
-    localVideoWrap.classList.remove('hidden');
+    localVideoWrap.classList.remove('hidden'); // Show local video
 
     if (pc) {
       for (const t of localStream.getTracks()) pc.addTrack(t, localStream);
       await renegotiate();
     }
+
     startMediaBtn.disabled = true;
     stopMediaBtn.disabled = false;
   } catch (e) {
@@ -203,6 +205,7 @@ startMediaBtn.onclick = async () => {
     alert('Could not get media: ' + e.message);
   }
 };
+
 
 stopMediaBtn.onclick = async () => {
   if (localStream) {
@@ -256,8 +259,10 @@ async function startConnection() {
     };
   }
 
-  pc.ontrack = (ev) => { remoteVideo.srcObject = ev.streams[0]; };
-remoteVideoWrap.classList.remove('hidden');
+pc.ontrack = (ev) => {
+  remoteVideo.srcObject = ev.streams[0];
+  remoteVideoWrap.classList.remove('hidden'); // Show remote video
+};
 
   pc.onicecandidate = (e) => {
     if (e.candidate) {
