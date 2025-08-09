@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P Chat App</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>P2P Chat App</h1>
+
+        <div id="room-container">
+            <input type="text" id="room-code" placeholder="Enter Room Code" />
+            <button id="join-room">Join Room</button>
+            <button id="create-room">Create Room</button>
+        </div>
+
+        <!-- Display room code when hosting -->
+        <div id="room-info" class="hidden">
+            <p><strong>Your Room Code:</strong> <span id="display-room-code"></span></p>
+        </div>
+
+        <div id="chat-container" class="hidden">
+            <div id="chat-box"></div>
+            <input type="text" id="message-input" placeholder="Type a message..." />
+            <button id="send-message">Send</button>
+            <div id="status"></div>
+        </div>
+    </div>
+
+    <!-- Firebase v8 for compatibility with your current JS -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
