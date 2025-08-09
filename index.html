@@ -1,37 +1,99 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P Chat App</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>P2P — Chat • Files • Video</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <div class="container">
-        <h1>P2P Chat App</h1>
-
-        <div id="room-container">
-            <input type="text" id="room-code" placeholder="Enter Room Code" />
-            <button id="join-room">Join Room</button>
-            <button id="create-room">Create Room</button>
-        </div>
-
-        <!-- Display room code when hosting -->
-        <div id="room-info" class="hidden">
-            <p><strong>Your Room Code:</strong> <span id="display-room-code"></span></p>
-        </div>
-
-        <div id="chat-container" class="hidden">
-            <div id="chat-box"></div>
-            <input type="text" id="message-input" placeholder="Type a message..." />
-            <button id="send-message">Send</button>
-            <div id="status"></div>
-        </div>
+  <header class="topbar">
+    <div class="brand">P2P Chat</div>
+    <div class="room-info">
+      <div class="room-code">Room: <span id="display-room-code">—</span></div>
+      <div id="status" class="status">Idle</div>
     </div>
+  </header>
 
-    <!-- Firebase v8 for compatibility with your current JS -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="app.js"></script>
+  <main class="app-grid">
+    <!-- LEFT: Controls & Chat -->
+    <section class="panel controls">
+      <div class="card">
+        <div class="row gap">
+          <input id="room-code" class="input" placeholder="Enter 6-digit room code" />
+          <button id="join-room" class="btn secondary">Join</button>
+          <button id="create-room" class="btn primary">Create</button>
+        </div>
+
+        <div id="room-info" class="host-info hidden">
+          <div class="chip">Your code: <strong id="display-room-code-inline"></strong></div>
+          <button id="leave-room" class="btn ghost">Leave</button>
+        </div>
+
+        <hr />
+
+        <div id="chat-area" class="chat-area hidden">
+          <div id="chat-box" class="chat-box" aria-live="polite"></div>
+
+          <div class="row send-row">
+            <input id="message-input" class="input" placeholder="Type a message..." />
+            <button id="send-message" class="btn primary">Send</button>
+          </div>
+
+          <div class="file-row">
+            <label class="file-label">
+              <input id="file-input" type="file" />
+              <span>Choose file</span>
+            </label>
+            <button id="send-file" class="btn">Send File</button>
+            <div id="file-progress" class="muted small"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Video & Device selection -->
+    <aside class="panel media">
+      <div class="card media-card">
+        <div class="media-controls">
+          <div class="selectors">
+            <label class="small">Camera</label>
+            <select id="cameraSelect" class="select"></select>
+
+            <label class="small">Microphone</label>
+            <select id="micSelect" class="select"></select>
+          </div>
+
+          <div class="media-buttons">
+            <button id="start-media" class="btn primary">Start Audio+Video</button>
+            <button id="stop-media" class="btn ghost" disabled>Stop Media</button>
+          </div>
+        </div>
+
+        <div class="videos">
+          <div class="video-wrap">
+            <div class="video-title">Local</div>
+            <video id="localVideo" autoplay muted playsinline></video>
+          </div>
+
+          <div class="video-wrap">
+            <div class="video-title">Remote</div>
+            <video id="remoteVideo" autoplay playsinline></video>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <div class="muted">Works with Firebase Realtime DB signaling • Replace config in <code>app.js</code></div>
+  </footer>
+
+  <!-- Firebase v8 (keep for compatibility with current app.js) -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <!-- your app logic -->
+  <script src="app.js"></script>
 </body>
 </html>
