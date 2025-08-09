@@ -181,7 +181,7 @@ async function startConnection(){
   showChat();
   pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
-  // Data channel setup
+  // data channel setup depending on host/joiner
   if(isHost){
     dataChannel = pc.createDataChannel('chat');
     setupDataChannel();
@@ -192,12 +192,13 @@ async function startConnection(){
     };
   }
 
-  // Remote media
+  // media handler: remote tracks -> remoteVideo
   pc.ontrack = (ev) => {
+    // attach stream
     remoteVideo.srcObject = ev.streams[0];
   };
 
-  // ICE handling
+  // ICE candidate -> push to DB
   pc.onicecandidate = (e) => {
     if(e.candidate){
       const path = isHost ? 'callerCandidates' : 'calleeCandidates';
@@ -205,7 +206,7 @@ async function startConnection(){
     }
   };
 
-  // Listen for ICE from other peer
+  // listen for other side ICE
   const otherCandidatesPath = isHost ? 'calleeCandidates' : 'callerCandidates';
   roomRef(otherCandidatesPath).on('child_added', snapshot => {
     const cand = snapshot.val();
@@ -215,40 +216,43 @@ async function startConnection(){
   });
 
   if(isHost){
-    // Create initial offer
+    // create offer, write to rooms/{roomCode}/offer
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     await roomRef('offer').set(offer);
-    setRoomTimestamp();
+    setRoomTimestamp(); // refresh timestamp
     setStatus('Offer created. Waiting for answer...');
 
-    // Listen for answers (including renegotiations)
+    // listen for answer
     roomRef('answer').on('value', async snap => {
       const answer = snap.val();
-      if(answer && (!pc.currentRemoteDescription || answer.sdp !== pc.remoteDescription.sdp)){
+      if(answer && !pc.currentRemoteDescription){
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
-        setStatus('✅ Connected');
+        setStatus('Connected (answer applied)');
       }
     });
 
   } else {
-    // Joiner listens for offers (initial + renegotiations)
-    roomRef('offer').on('value', async snap => {
-      const offer = snap.val();
-      if(!offer) return;
-
-      if(!pc.currentRemoteDescription || offer.sdp !== pc.remoteDescription.sdp){
-        await pc.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await roomRef('answer').set(answer);
-        setRoomTimestamp();
-        setStatus('Answer sent. Connection updated.');
-      }
-    });
+    // joiner: read offer, set remote, create answer and write it
+    const offerSnap = await roomRef('offer').once('value');
+    if(!offerSnap.exists()){
+      setStatus('❌ No such room / host not ready.');
+      return;
+    }
+    const offer = offerSnap.val();
+    // apply offer
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    setStatus('Offer received. Creating answer...');
+    // create answer
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await roomRef('answer').set(answer);
+    setRoomTimestamp();
+    setStatus('Answer sent. Completing connection...');
   }
 
-  // Send message handler
+  // when connection reaches datachannel open, set connected status is handled inside setupDataChannel()
+  // send message handler
   sendMessageButton.onclick = () => {
     const txt = messageInput.value.trim();
     if(!txt || !dataChannel || dataChannel.readyState !== 'open') return;
@@ -257,12 +261,11 @@ async function startConnection(){
     messageInput.value = '';
   };
 
-  // Cleanup on unload
+  // cleanup on unload (host deletes room)
   window.addEventListener('beforeunload', async () => {
     await cleanupAndClose(true);
   });
 }
-
 
 // data channel message handling
 function setupDataChannel(){
